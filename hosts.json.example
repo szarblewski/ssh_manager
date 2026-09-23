@@ -1,0 +1,32 @@
+{
+  "hosts": [
+    {
+      "id": 1,
+      "name": "vps-cliente-a",
+      "host": "203.0.113.10",
+      "user": "root",
+      "port": 2222,
+      "identity_file": "/home/vanderlei/.ssh/id_rsa_cliente_a",
+      "group": "cliente-a",
+      "tags": ["producao", "sap-b1"]
+    },
+    {
+      "id": 2,
+      "name": "vps-cliente-b",
+      "host": "203.0.113.20",
+      "user": "deploy",
+      "port": 22,
+      "identity_file": "/home/vanderlei/.ssh/id_rsa_cliente_b",
+      "group": "cliente-b",
+      "tags": ["homologacao"]
+    },
+    {
+      "id": 3,
+      "name": "proxmox-host",
+      "host": "192.168.1.5",
+      "user": "root",
+      "group": "infra",
+      "tags": ["proxmox", "producao"]
+    }
+  ]
+}
