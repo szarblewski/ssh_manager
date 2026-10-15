@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 #
+# [LEGADO] Este script foi substituido pelo sshm em Go: um binario unico que
+# roda tambem no Windows, com os mesmos comandos, apelidos, filtros e o mesmo
+# hosts.json - e sem depender de jq, fzf, secret-tool ou sshpass.
+# Ele continua funcionando, mas evolucoes novas acontecem so no binario.
+# Veja README.md e docs/migracao.md.
+#
 # sshm - gerenciador de conexoes SSH
 #
 # Uso:
@@ -29,6 +35,13 @@
 # --flat desliga o agrupamento e volta a tabela unica com a coluna GRUPO.
 #
 # Requer: jq (sudo apt install jq)
+#
+# Instalacao (deixa o comando disponivel em qualquer pasta):
+#   ./install.sh            copia para ~/.local/bin/sshm e a configuracao para
+#                           ~/.config/sshm/hosts.json
+#   sudo ./install.sh --system
+#                           instala em /usr/local/bin
+#   ./install.sh --help     lista as opcoes (--symlink, --config, --uninstall...)
 #
 # Seletor da selecao interativa:
 #   - fzf, quando instalado (sudo apt install fzf): busca fuzzy;
@@ -119,7 +132,9 @@ config_candidates() {
 }
 
 # onde criar o arquivo quando nenhum existe: $SSHM_CONFIG, pasta do script
-# (se gravavel) ou $HOME/.config/sshm/hosts.json
+# (se gravavel) ou $HOME/.config/sshm/hosts.json. A pasta do script nao conta
+# quando ela e um diretorio "bin" (sshm instalado como comando): a configuracao
+# nao deve nascer no meio dos executaveis.
 config_new_path() {
     local dir
     if [ -n "$SSHM_CONFIG" ]; then
@@ -127,10 +142,15 @@ config_new_path() {
         return 0
     fi
     dir="$(script_dir)"
-    if [ -w "$dir" ]; then
-        printf '%s\n' "$dir/hosts.json"
-        return 0
-    fi
+    case "${dir##*/}" in
+        bin|sbin) ;;
+        *)
+            if [ -w "$dir" ]; then
+                printf '%s\n' "$dir/hosts.json"
+                return 0
+            fi
+            ;;
+    esac
     printf '%s\n' "$HOME/.config/sshm/hosts.json"
 }
 

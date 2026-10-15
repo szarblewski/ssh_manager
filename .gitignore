@@ -1,0 +1,8 @@
+# artefatos de build
+/sshm
+/sshm.exe
+/dist/
+*.test
+
+# configuracao local: o hosts.json de verdade nao deve ser versionado
+hosts.json.local

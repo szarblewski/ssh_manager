@@ -1,0 +1,48 @@
+version: 2
+
+project_name: sshm
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: sshm
+    main: ./cmd/sshm
+    binary: sshm
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/szarblewski/ssh_manager/internal/cli.Version={{ .Version }}
+
+archives:
+  - id: sshm
+    formats:
+      - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - docs/*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  draft: false
+  prerelease: auto
