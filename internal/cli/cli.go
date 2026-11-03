@@ -110,6 +110,8 @@ func (a *App) Run(args []string) int {
 		return a.report(a.cmdDelete(commandArgs))
 	case "passwd", "password", "senha", "pass":
 		return a.report(a.cmdPasswd(commandArgs))
+	case "cp", "copy", "scp":
+		return a.report(a.cmdCopy(commandArgs))
 	case "config":
 		return a.report(a.cmdConfig(commandArgs))
 	case "migrate-secrets", "migrate":
@@ -123,6 +125,10 @@ func (a *App) Run(args []string) int {
 		a.printUsage()
 		return 0
 	default:
+		// o scp tambem dispensa o nome do comando: "host:/a host:/b" ja e copia
+		if a.looksLikeCopy(rest) {
+			return a.report(a.cmdCopy(rest))
+		}
 		return a.report(a.cmdConnect(command, commandArgs))
 	}
 }
@@ -249,6 +255,9 @@ func (a *App) printUsage() {
      sshm edit <id|nome> [-n nome] [-H host] [-u usuario] [-p porta] [-i chave]
                          [-g grupo] [-t tags]   (atalhos: editar, update)
      sshm delete <id|nome> [-y]              (atalhos: del, rm, remove, apagar)
+     sshm cp [-r] [-p] [-q] <origem>... <destino>
+                                            copia arquivos nos dois sentidos e
+                                            entre hosts (atalhos: copy, scp)
      sshm <numero|nome> [opcoes do ssh] [-- comando]
      sshm list [-g <grupo>] [-t <tag>] [--flat]
      sshm ls | -l
@@ -275,6 +284,16 @@ Opcoes aceitas depois do host (como no ssh):
 
 Listagem e selecao separam os hosts por grupo (alfabetica, sem grupo no fim);
 --flat volta a tabela unica com a coluna GRUPO.
+
+Na copia (sshm cp), use "host:/caminho" para o lado remoto:
+     sshm cp host:/etc/nginx/nginx.conf .        (baixa)
+     sshm cp ./site.tar.gz host:/tmp/            (envia)
+     sshm cp -r hostA:/srv/site hostB:/backup/   (host a host)
+     sshm cp -p -r host:/var/log ./logs          (-p mantem permissao e data)
+
+Sem o nome do comando, dois alvos ja sao uma copia (como no scp):
+     sshm host:/etc/app.conf hostB:~/            (envia)
+     sshm 19:/mnt/scripts/x.sh 3:~/              (host a host, para o home)
 
 Config atual: %s
 Procura nesta ordem: --config, $%s, %s,
@@ -304,28 +323,8 @@ func (a *App) session(host config.Host, extra []string) (int, error) {
 		a.info("%s", warning)
 	}
 
-	password, warnings := secrets.Lookup(a.Vault, host)
-	for _, warning := range warnings {
-		a.info("%s", warning)
-	}
-
 	opts := parsed.Options
-	opts.Password = password
-	opts.Interactive = sshx.IsTerminal(a.In)
-	if !opts.StrictHostKeySet {
-		opts.StrictHostKey = strictHostKeyEnv()
-	}
-
-	spec := sshx.Spec{
-		Name:         host.Name,
-		Host:         host.Host,
-		User:         host.User,
-		Port:         host.PortOrDefault(),
-		IdentityFile: host.IdentityFile,
-		ProxyJump:    host.ProxyJump,
-	}
-
-	dialer := sshx.NewDialer(spec, opts, a.Prompter, a.Err)
+	dialer, password := a.hostDialer(host, opts)
 	defer dialer.Close()
 
 	if host.Group != "" {

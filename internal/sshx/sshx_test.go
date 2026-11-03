@@ -19,6 +19,10 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/pkg/sftp"
+
+	"github.com/szarblewski/ssh_manager/internal/transfer"
 )
 
 func TestParseArgs(t *testing.T) {
@@ -477,6 +481,83 @@ func TestLocalForward(t *testing.T) {
 	}
 }
 
+// --- copia de arquivos (SFTP) contra o servidor em processo ---
+
+func TestSFTPCopyAgainstInProcessServer(t *testing.T) {
+	server := startTestServer(t, "tester", "segredo")
+	knownHosts := filepath.Join(t.TempDir(), "known_hosts")
+
+	dialer := NewDialer(
+		Spec{Host: "127.0.0.1", Port: server.port, User: "tester"},
+		Options{Password: "segredo", KnownHostsFiles: []string{knownHosts}},
+		NopPrompter{},
+		io.Discard,
+	)
+	defer dialer.Close()
+
+	client, err := dialer.Dial(context.Background())
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer client.Close()
+
+	remoteClient, err := sftp.NewClient(client)
+	if err != nil {
+		t.Fatalf("subsistema sftp: %v", err)
+	}
+	defer remoteClient.Close()
+
+	root := t.TempDir()
+	// o servidor de teste serve o proprio sistema de arquivos da maquina
+	remoteDir := filepath.ToSlash(filepath.Join(root, "remoto"))
+	remote := transfer.Remote("teste", remoteClient)
+	local := transfer.Local()
+
+	// local -> remoto (arquivo)
+	sentFile := filepath.Join(root, "envio.txt")
+	if err := os.WriteFile(sentFile, []byte("conteudo enviado"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transfer.Copy(local, sentFile, remote, remoteDir+"/", transfer.Options{}); err != nil {
+		t.Fatalf("envio: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "remoto", "envio.txt")); err != nil || string(data) != "conteudo enviado" {
+		t.Fatalf("arquivo remoto = %q, %v", data, err)
+	}
+
+	// remoto -> local (arquivo, com nome novo)
+	backFile := filepath.Join(root, "volta.txt")
+	if _, err := transfer.Copy(remote, remoteDir+"/envio.txt", local, backFile, transfer.Options{}); err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	if data, err := os.ReadFile(backFile); err != nil || string(data) != "conteudo enviado" {
+		t.Fatalf("arquivo baixado = %q, %v", data, err)
+	}
+
+	// local -> remoto (diretorio) e de volta
+	srcDir := filepath.Join(root, "site")
+	if err := os.MkdirAll(filepath.Join(srcDir, "css"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "css", "app.css"), []byte("body{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transfer.Copy(local, srcDir, remote, remoteDir+"/site", transfer.Options{Recursive: true}); err != nil {
+		t.Fatalf("envio da pasta: %v", err)
+	}
+	if _, err := transfer.Copy(remote, remoteDir+"/site", local, filepath.Join(root, "site-copia"), transfer.Options{Recursive: true}); err != nil {
+		t.Fatalf("download da pasta: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "site-copia", "css", "app.css")); err != nil || string(data) != "body{}" {
+		t.Fatalf("arquivo da pasta baixada = %q, %v", data, err)
+	}
+
+	// sem -r a pasta e recusada
+	if _, err := transfer.Copy(remote, remoteDir+"/site", local, filepath.Join(root, "sem-r"), transfer.Options{}); err == nil {
+		t.Fatal("pasta sem -r deveria falhar")
+	}
+}
+
 // --- infraestrutura dos testes ---
 
 type testServer struct {
@@ -551,18 +632,43 @@ func acceptTestSession(newChannel ssh.NewChannel, states *testServer) {
 	}
 	go func() {
 		for request := range channelRequests {
-			if request.Type != "exec" {
+			switch request.Type {
+			case "exec":
+				request.Reply(true, nil)
+				command := execCommand(request.Payload)
+				fmt.Fprintf(channel, "%s\n", command)
+				status := states.exitStatus
+				channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
+				channel.Close()
+			case "subsystem":
+				// o servidor de teste tambem aceita o subsistema sftp
+				var payload struct{ Name string }
+				if err := ssh.Unmarshal(request.Payload, &payload); err != nil || payload.Name != "sftp" {
+					request.Reply(false, nil)
+					continue
+				}
+				request.Reply(true, nil)
+				serveTestSFTP(channel)
+				return
+			default:
 				request.Reply(false, nil)
-				continue
 			}
-			request.Reply(true, nil)
-			command := execCommand(request.Payload)
-			fmt.Fprintf(channel, "%s\n", command)
-			status := states.exitStatus
-			channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
-			channel.Close()
 		}
 	}()
+}
+
+// serveTestSFTP atende o subsistema sftp (usado pelos testes de copia).
+func serveTestSFTP(channel ssh.Channel) {
+	server, err := sftp.NewServer(channel)
+	if err != nil {
+		channel.Close()
+		return
+	}
+	defer channel.Close()
+	defer server.Close()
+	if err := server.Serve(); err != nil && !errors.Is(err, io.EOF) {
+		return
+	}
 }
 
 func forwardTestChannel(newChannel ssh.NewChannel) {

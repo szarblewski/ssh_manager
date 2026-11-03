@@ -80,6 +80,7 @@ ID NOME USER@HOST   PORTA TAGS
 | `sshm create` | `new`, `-c`, `--create` | cadastra uma conexão |
 | `sshm edit <id\|nome>` | `editar`, `update` | edita a conexão (sem opções, pergunta campo a campo) |
 | `sshm delete <id\|nome>` | `del`, `rm`, `remove`, `apagar` | apaga a conexão (`-y` não pede confirmação) |
+| `sshm cp [-r] [-p] [-q] <origem>... <destino>` | `copy`, `scp` | copia arquivos (local ↔ host e host ↔ host) |
 | `sshm passwd [<id\|nome>]` | `password`, `senha`, `pass` | guarda/troca/apaga a senha (`--remove`, `--plain`) |
 | `sshm config` | | `path`, `show`, `init`, `validate`, `normalize`, `migrate-secrets` |
 | `sshm version` | `-V`, `--version` | mostra a versão |
@@ -142,6 +143,57 @@ O `known_hosts` é respeitado: host novo é aceito e registrado
 (*accept-new*, como o `sshm.sh`), chave **alterada é sempre recusada** — nunca
 trocamos a chave sozinhos. Com `SSHM_STRICT_HOSTKEY=1` a primeira conexão pede
 confirmação manual.
+
+## Cópia de arquivos (estilo `scp`)
+
+`sshm cp` copia arquivos entre a máquina local e os hosts cadastrados — e
+**entre dois hosts** — sem precisar do `scp`/`sftp` do sistema: o protocolo é
+falado pelo próprio binário (SFTP sobre a mesma conexão do `sshm`, com as chaves,
+a senha do cofre, o `known_hosts` e os bastiões do cadastro).
+
+```console
+$ sshm cp vps-cliente-a:/etc/nginx/nginx.conf .          # baixa
+$ sshm cp ./site.tar.gz vps-cliente-a:/tmp/              # envia
+$ sshm cp -r vps-cliente-a:/var/log ./logs               # baixa uma pasta
+$ sshm cp -r vps-cliente-a:/srv/site vps-b:/backup/      # host a host
+$ sshm cp -p ~/.ssh/config vps-cliente-a:                # para o home do usuário
+```
+
+| Opção | Efeito |
+| --- | --- |
+| `-r`, `--recursive` | copia diretórios (sem ela, uma pasta é recusada) |
+| `-p`, `--preserve` | mantém a permissão e a data de modificação |
+| `-q`, `--quiet` | não lista cada arquivo copiado nem mostra a barra de progresso |
+
+* o lado remoto é escrito `host:/caminho`, onde `host` é o **nome** ou o **id**
+  do cadastro; `host:` (sem caminho) é o home do usuário, e `host:~/pasta` é o
+  mesmo que `host:/home/usuario/pasta` (o `~` é resolvido no servidor);
+* o nome do comando é opcional quando os dois lados já dizem que é cópia:
+  `sshm hostA:/etc/app.conf hostB:~/` faz o mesmo que `sshm cp`;
+* o destino pode ser um diretório existente — o arquivo entra nele com o nome da
+  origem — ou um caminho completo, que renomeia;
+* várias origens de uma vez (`sshm cp a.txt b.txt host:/tmp`) exigem que o
+  destino seja um diretório;
+* arquivos existentes são substituídos; links simbólicos são recriados como
+  links (com `-r`);
+* host ↔ host abre **duas** conexões e transfere em fluxo pela sua máquina, sem
+  arquivo temporário em disco (é mais lento que copiar direto entre os dois
+  servidores, mas não exige chave do host A no host B);
+* o servidor precisa aceitar o subsistema `sftp` (o padrão do OpenSSH).
+
+Em um terminal, cada arquivo mostra uma **barra de progresso** de uma linha
+(porcentagem, tamanho e velocidade); ela é redesenhada no lugar, sem sujar o
+histórico, e some quando a cópia termina:
+
+```console
+$ sshm cp vps-cliente-a:/var/log/nginx/access.log .
+..g/nginx/access.log [==========----------------------------------]  28% 3.4 MiB/12.3 MiB 5.1 MiB/s
+sshm: vps-cliente-a:/var/log/nginx/access.log -> ./access.log (12.3 MiB)
+sshm: concluido: 1 arquivo(s), 0 diretorio(s), 0 link(s), 12.3 MiB
+```
+
+Com a saída redirecionada (pipe/arquivo) ou com `-q`, a barra não aparece —
+só as linhas de cada arquivo (ou nada, com `-q`).
 
 ## Senhas
 

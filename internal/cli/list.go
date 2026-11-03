@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 
 	"github.com/szarblewski/ssh_manager/internal/config"
@@ -99,6 +100,10 @@ func (a *App) cmdConnect(key string, extra []string) error {
 	}
 	index, err := a.findHost(cfg, key)
 	if err != nil {
+		// "host:/caminho" e um alvo de copia, nao um host
+		if _, _, ok := remoteSpecPrefix(cfg, key); ok {
+			return fmt.Errorf("%s e um host com caminho: para copiar use 'sshm cp %s <destino>'", key, key)
+		}
 		return err
 	}
 	return a.connectTo(cfg.Hosts[index], extra)

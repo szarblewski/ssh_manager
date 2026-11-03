@@ -45,6 +45,33 @@ func (a *App) output(format string, args ...any) {
 	fmt.Fprintf(a.Out, format, args...)
 }
 
+// hostDialer monta o dialer de um host cadastrado, com a senha guardada no
+// cofre (ou no arquivo) e a politica de known_hosts do sshm.
+//
+// Devolve tambem a senha encontrada, para as mensagens de quem chama.
+func (a *App) hostDialer(host config.Host, opts sshx.Options) (*sshx.Dialer, string) {
+	password, warnings := secrets.Lookup(a.Vault, host)
+	for _, warning := range warnings {
+		a.info("%s", warning)
+	}
+
+	opts.Password = password
+	opts.Interactive = sshx.IsTerminal(a.In)
+	if !opts.StrictHostKeySet {
+		opts.StrictHostKey = strictHostKeyEnv()
+	}
+
+	spec := sshx.Spec{
+		Name:         host.Name,
+		Host:         host.Host,
+		User:         host.User,
+		Port:         host.PortOrDefault(),
+		IdentityFile: host.IdentityFile,
+		ProxyJump:    host.ProxyJump,
+	}
+	return sshx.NewDialer(spec, opts, a.Prompter, a.Err), password
+}
+
 // findHost resolve id/nome de host e devolve o indice na configuracao.
 func (a *App) findHost(cfg *config.Config, key string) (int, error) {
 	index, err := cfg.Find(key)

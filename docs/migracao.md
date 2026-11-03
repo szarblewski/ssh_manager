@@ -95,6 +95,23 @@ cliente é nativo, então um subconjunto é interpretado pelo sshm:
 | `sshm host -C` | aceito, mas sem compressão (aviso) |
 | `sshm host -o Port=2222` | igual, para as opções da tabela do README |
 
+### Cópia de arquivos
+
+O `sshm.sh` não copiava arquivos: era preciso usar `scp` à parte (e repetir
+host, usuário, porta e chave na linha de comando). Agora o próprio `sshm cp`
+fala SFTP usando o cadastro:
+
+| Antes | Agora |
+| --- | --- |
+| `scp -P 2222 arquivo root@203.0.113.10:/tmp/` | `sshm cp arquivo vps-cliente-a:/tmp/` |
+| `scp -P 2222 root@203.0.113.10:/etc/app.conf .` | `sshm cp vps-cliente-a:/etc/app.conf .` |
+| `scp -r root@203.0.113.10:/var/log ./logs` | `sshm cp -r vps-cliente-a:/var/log ./logs` |
+| `scp a user@hostB:/tmp/` (do host A) | `sshm cp vps-a:/caminho/a vps-b:/tmp/` (da sua máquina) |
+
+O `cp` pode ser omitido quando os dois lados já se explicam, como no `scp` —
+`sshm vps-a:/etc/app.conf vps-b:~/` é o mesmo comando (e `host:~/x` é o mesmo
+que `host:/home/usuario/x`).
+
 ### Chave de host
 
 Continua valendo o comportamento do script: host novo é aceito e registrado no
