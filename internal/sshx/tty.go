@@ -36,7 +36,19 @@ func TermType() string {
 }
 
 // TerminalSize devolve largura e altura do terminal (0,0 se indisponivel).
+//
+// O arquivo recebido pode ser a entrada padrao: no Windows ela e um handle de
+// entrada, que nao serve para consultar o tamanho da janela do console. Nesse
+// caso caimos para a saida do console (ver consoleSize).
 func TerminalSize(f *os.File) (width, height int) {
+	if w, h := fileSize(f); w > 0 && h > 0 {
+		return w, h
+	}
+	return consoleSize()
+}
+
+// fileSize consulta o tamanho pelo proprio arquivo (0,0 se nao der).
+func fileSize(f *os.File) (width, height int) {
 	if f == nil {
 		return 0, 0
 	}
