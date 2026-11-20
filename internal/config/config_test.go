@@ -230,7 +230,12 @@ func TestPathsCandidatesOrderAndDedup(t *testing.T) {
 	if len(candidates) < 3 {
 		t.Fatalf("candidatos insuficientes: %v", candidates)
 	}
-	if want := filepath.Join(appData, DirName, FileName); candidates[0] != want {
+	// fora do Windows o APPDATA nao conta: vale XDG_CONFIG_HOME/~/.config
+	want := filepath.Join(appData, DirName, FileName)
+	if runtime.GOOS != "windows" {
+		want = filepath.Join(home, ".config", DirName, FileName)
+	}
+	if candidates[0] != want {
 		t.Fatalf("primeiro candidato = %q, esperado %q", candidates[0], want)
 	}
 	seen := map[string]int{}
@@ -241,7 +246,7 @@ func TestPathsCandidatesOrderAndDedup(t *testing.T) {
 		seen[strings.ToLower(c)]++
 	}
 
-	if got := CreatePath(""); got != filepath.Join(appData, DirName, FileName) {
+	if got := CreatePath(""); got != want {
 		t.Fatalf("CreatePath = %q", got)
 	}
 
